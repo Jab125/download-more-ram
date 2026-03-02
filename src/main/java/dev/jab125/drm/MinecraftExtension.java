@@ -7,6 +7,8 @@ import net.minecraft.client.player.LocalPlayer;
 public interface MinecraftExtension {
 	LocalPlayer[] getLocalPlayers();
 
+	DisplaySection[] getDisplaySections();
+
 	MultiPlayerGameMode[] getLocalGameModes();
 
 	int getLocalPlayerId();

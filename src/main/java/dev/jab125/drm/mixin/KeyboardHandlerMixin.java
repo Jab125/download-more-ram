@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.jab125.drm.MinecraftExtension;
+import dev.jab125.drm.TemporarySwitcher;
 import net.minecraft.client.KeyboardHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.input.KeyEvent;
@@ -23,9 +24,11 @@ public class KeyboardHandlerMixin {
 			original.call(handle, action, event);
 			return;
 		}
-		for (int i = 0; i < ((MinecraftExtension) minecraft).getLocalPlayers().length; i++) {
-			if (((MinecraftExtension) minecraft).setLocalPlayerId(i)) {
-				original.call(handle, action, event);
+		try (var _ = new TemporarySwitcher()) {
+			for (int i = 0; i < ((MinecraftExtension) minecraft).getLocalPlayers().length; i++) {
+				if (((MinecraftExtension) minecraft).setLocalPlayerId(i)) {
+					original.call(handle, action, event);
+				}
 			}
 		}
 	}

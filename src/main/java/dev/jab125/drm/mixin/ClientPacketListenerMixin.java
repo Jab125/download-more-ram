@@ -4,6 +4,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import dev.jab125.drm.Indexables;
 import dev.jab125.drm.MinecraftExtension;
+import dev.jab125.drm.TemporarySwitcher;
 import net.minecraft.client.ClientRecipeBook;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.toasts.SystemToast;
@@ -164,7 +165,8 @@ public abstract class ClientPacketListenerMixin extends ClientCommonPacketListen
 		);
 		this.minecraft.setLevel(this.level);
 		LocalPlayer newPlayer = this.minecraft.gameMode.createPlayer(this.level, new StatsCounter(), new ClientRecipeBook());
-		LocalPlayer[] localPlayers = ((MinecraftExtension)this.minecraft).getLocalPlayers();
+		MinecraftExtension ext = (MinecraftExtension) this.minecraft;
+		LocalPlayer[] localPlayers = ext.getLocalPlayers();
 		if (localPlayers[0] == null && one) {
 			one = false;
 			localPlayers[0] = newPlayer;
@@ -178,6 +180,9 @@ public abstract class ClientPacketListenerMixin extends ClientCommonPacketListen
 			((MinecraftExtension)this.minecraft).getLocalGameModes()[1] = this.minecraft.gameMode;
 			index = 1;
 			System.out.println("SETTING UP SECOND PLAYER");
+			ext.getDisplaySections()[0].xW /= 2;
+			ext.getDisplaySections()[1] = ext.getDisplaySections()[0].clone();
+			ext.getDisplaySections()[1].xD += 0.5;
 		}
 //		if (newPlayer == null) {
 //			newPlayer = this.minecraft.gameMode.createPlayer(this.level, new StatsCounter(), new ClientRecipeBook());
@@ -196,7 +201,11 @@ public abstract class ClientPacketListenerMixin extends ClientCommonPacketListen
 		newPlayer.input = new KeyboardInput(this.minecraft.options);
 		this.minecraft.gameMode.adjustPlayer(newPlayer);
 		//this.minecraft.setCameraEntity(newPlayer);
-		this.startWaitingForNewLevel(newPlayer, this.level, LevelLoadingScreen.Reason.OTHER);
+		try (var _ = new TemporarySwitcher()) {
+			((MinecraftExtension)this.minecraft).setLocalPlayerId(1);
+			this.startWaitingForNewLevel(newPlayer, this.level, LevelLoadingScreen.Reason.OTHER);
+		}
+
 		newPlayer.setReducedDebugInfo(packet.reducedDebugInfo());
 		newPlayer.setShowDeathScreen(packet.showDeathScreen());
 		newPlayer.setDoLimitedCrafting(packet.doLimitedCrafting());

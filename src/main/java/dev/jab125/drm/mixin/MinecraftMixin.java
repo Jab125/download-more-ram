@@ -9,14 +9,17 @@ import com.mojang.blaze3d.platform.FramerateLimitTracker;
 import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.systems.TimerQuery;
+import dev.jab125.drm.DisplaySection;
 import dev.jab125.drm.Drm;
 import dev.jab125.drm.MinecraftExtension;
+import dev.jab125.drm.TemporarySwitcher;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.User;
 import net.minecraft.client.gui.components.DebugScreenOverlay;
 import net.minecraft.client.gui.components.debug.DebugScreenEntries;
 import net.minecraft.client.gui.components.debug.DebugScreenEntryList;
+import net.minecraft.client.gui.screens.LevelLoadingScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientHandshakePacketListenerImpl;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -33,6 +36,7 @@ import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.login.ServerboundHelloPacket;
 import net.minecraft.server.WorldStem;
 import net.minecraft.server.packs.repository.PackRepository;
+import net.minecraft.util.Mth;
 import net.minecraft.util.Util;
 import net.minecraft.util.profiling.Profiler;
 import net.minecraft.util.profiling.ProfilerFiller;
@@ -145,6 +149,7 @@ public abstract class MinecraftMixin implements MinecraftExtension {
 	private MultiPlayerGameMode[] localGameModes = new MultiPlayerGameMode[MAX_COUNT];
 	private ItemInHandRenderer[] itemInHandRenderers = new ItemInHandRenderer[MAX_COUNT];
 	private Screen[] localScreens = new Screen[MAX_COUNT];
+	private DisplaySection[] displaySections = new DisplaySection[MAX_COUNT];
 
 	@Inject(method = "setScreen", at = @At("HEAD"))
 	void setScreen(Screen screen, CallbackInfo ci) {
@@ -159,6 +164,11 @@ public abstract class MinecraftMixin implements MinecraftExtension {
 	@Override
 	public LocalPlayer[] getLocalPlayers() {
 		return localPlayers;
+	}
+
+	@Override
+	public DisplaySection[] getDisplaySections() {
+		return displaySections;
 	}
 
 	private boolean setupAlready = false;
@@ -286,13 +296,16 @@ public abstract class MinecraftMixin implements MinecraftExtension {
 			original.call();
 			return;
 		}
-		for (int i = 0; i < MAX_COUNT; i++) {
-			if (setLocalPlayerId(i)) {
-			//	System.out.println("Ticking connection " + player);
-				//player.connection.tick();
-				original.call();
+		try (var _ = new TemporarySwitcher()) {
+			for (int i = 0; i < MAX_COUNT; i++) {
+				if (setLocalPlayerId(i)) {
+					//	System.out.println("Ticking connection " + player);
+					//player.connection.tick();
+					original.call();
+				}
 			}
 		}
+
 
 	}
 	@Override
@@ -348,9 +361,10 @@ public abstract class MinecraftMixin implements MinecraftExtension {
 		localPlayers[0] = player;
 		localGameModes[0] = gameMode;
 		itemInHandRenderers[0] = gameRenderer.itemInHandRenderer;
+		displaySections[0] = new DisplaySection(0, 0, 1, 1);
 
-		localPlayers[1] = localPlayers[1] != null ? localPlayers[1] : player;
-		localGameModes[1] = localGameModes[1] != null ? localGameModes[1] : gameMode;
+//		localPlayers[1] = localPlayers[1] != null ? localPlayers[1] : player;
+//		localGameModes[1] = localGameModes[1] != null ? localGameModes[1] : gameMode;
 		itemInHandRenderers[1] = gameRenderer.itemInHandRenderer;
 	}
 
@@ -389,7 +403,8 @@ public abstract class MinecraftMixin implements MinecraftExtension {
 		RenderTarget mainRenderTarget = this.getMainRenderTarget();
 		if (getConnection() == null) {
 			Drm.x = -1;
-			Drm.yes = false;
+			Drm.y = -1;
+			Drm.d = 1;
 			mainRenderTarget.resize(this.window.getWidth(), this.window.getHeight());
 			RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(mainRenderTarget.getColorTexture(), 0, mainRenderTarget.getDepthTexture(), 1.0);
 			profiler.popPush("gameRenderer");
@@ -403,34 +418,42 @@ public abstract class MinecraftMixin implements MinecraftExtension {
 				mainRenderTarget.blitToScreen();
 			}
 		} else {
-			for (int i = 0; i < MAX_COUNT; i++) {
-				if (setLocalPlayerId(i)) {
-				//	if (i == 1) continue;
-					Drm.x = window.getWidth() / 2 * i;
-					mainRenderTarget.resize(this.window.getWidth() / 2, this.window.getHeight());
-					RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(mainRenderTarget.getColorTexture(), 0, mainRenderTarget.getDepthTexture(), 1.0);
-					profiler.popPush("gameRenderer");
-					if (!this.noRender) {
-					//	System.out.println(getCameraEntity());
-						if (screen != null) {
-							screen.width = window.getGuiScaledWidth() / 2;
-						}
-						this.gameRenderer.resize(this.window.getWidth() / 2, this.window.getHeight());
-						Drm.yes = true;
-						this.gameRenderer.getMainCamera().setEntity(player);
-						setLocalPlayerId(i);
+			try (var _ = new TemporarySwitcher()) {
+				for (int i = 0; i < MAX_COUNT; i++) {
+					if (setLocalPlayerId(i)) {
+						DisplaySection displaySection = displaySections[i];
+						//	if (i == 1) continue;
+						Drm.x = (int) Mth.lerp(displaySection.xD, 0, window.getWidth());
+						Drm.y = (int) Mth.lerp(displaySection.yD, 0, window.getHeight());
+						mainRenderTarget.resize((int) (this.window.getWidth() * displaySection.xW), (int) (this.window.getHeight() * displaySection.yW));
+						RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(mainRenderTarget.getColorTexture(), 0, mainRenderTarget.getDepthTexture(), 1.0);
+						profiler.popPush("gameRenderer");
+						if (!this.noRender) {
+							//	System.out.println(getCameraEntity());
+							if (screen != null) {
+								screen.width = (int) (window.getGuiScaledWidth() * displaySection.xW);
+								screen.height = (int) (window.getGuiScaledHeight() * displaySection.yW);
+							}
+							this.gameRenderer.resize((int) (this.window.getWidth() * displaySection.xW), (int) (this.window.getHeight() * displaySection.yW));
+							Drm.d = displaySection.xW;
+							Drm.d2 = displaySection.yW;
+							this.gameRenderer.getMainCamera().setEntity(player);
+							setLocalPlayerId(i);
 //						System.out.println(localPlayers[0].level() == localPlayers[1].level());
 
-						this.gameRenderer.setLevel((ClientLevel) player.level());
-						this.gameRenderer.render(this.deltaTracker, renderLevel);
-						Drm.yes = false;
-					}
+							this.gameRenderer.setLevel((ClientLevel) player.level());
+							this.gameRenderer.render(this.deltaTracker, renderLevel);
+							Drm.d = 1;
+							Drm.d2 = 1;
+						}
 
-					profiler.popPush("blit");
-					Drm.x = window.getWidth() / 2 * i;
+						profiler.popPush("blit");
+						Drm.x = (int) Mth.lerp(displaySection.xD, 0, window.getWidth());
+						Drm.y = (int) Mth.lerp(displaySection.yD, 0, window.getHeight());
 
-					if (!this.window.isMinimized()) {
-						mainRenderTarget.blitToScreen();
+						if (!this.window.isMinimized()) {
+							mainRenderTarget.blitToScreen();
+						}
 					}
 				}
 			}
@@ -480,6 +503,10 @@ public abstract class MinecraftMixin implements MinecraftExtension {
 
 	@WrapOperation(method = "setScreen", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/gui/screens/Screen;init(II)V"))
 	void init (Screen instance, int width, int height, Operation<Void> original) {
-		original.call(instance, getConnection() == null ? width : width/2, height);
+		System.out.println("Calling screen init while being " + localPlayerId);
+		if (instance instanceof LevelLoadingScreen screen) {
+			System.out.println("WHAT?");
+		}
+		original.call(instance, getConnection() == null ? width : (int) (width * displaySections[localPlayerId].xW), getConnection() == null ? height : (int) (height * displaySections[localPlayerId].yW));
 	}
 }

@@ -19,6 +19,11 @@ public class WindowMixin {
 	 */
 	@WrapMethod(method = {"getWidth", "getScreenWidth", "getGuiScaledWidth"})
 	public int getWidth(Operation<Integer> original) {
-		return Drm.yes ? original.call() / 2 : original.call();
+		return (int) (original.call() * Drm.d);
+	}
+
+	@WrapMethod(method = {"getHeight", "getScreenWidth", "getGuiScaledHeight"})
+	public int getHeight(Operation<Integer> original) {
+		return (int) (original.call() * Drm.d2);
 	}
 }

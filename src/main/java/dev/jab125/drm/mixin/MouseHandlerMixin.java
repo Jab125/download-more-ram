@@ -3,6 +3,7 @@ package dev.jab125.drm.mixin;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import dev.jab125.drm.MinecraftExtension;
+import dev.jab125.drm.TemporarySwitcher;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.MouseHandler;
 import net.minecraft.client.input.MouseButtonInfo;
@@ -22,9 +23,11 @@ public class MouseHandlerMixin {
 			original.call(handle, rawButtonInfo, action);
 			return;
 		}
-		for (int i = 0; i < ((MinecraftExtension) minecraft).getLocalPlayers().length; i++) {
-			if (((MinecraftExtension) minecraft).setLocalPlayerId(i)) {
-				original.call(handle, rawButtonInfo, action);
+		try (var _ = new TemporarySwitcher()) {
+			for (int i = 0; i < ((MinecraftExtension) minecraft).getLocalPlayers().length; i++) {
+				if (((MinecraftExtension) minecraft).setLocalPlayerId(i)) {
+					original.call(handle, rawButtonInfo, action);
+				}
 			}
 		}
 	}
