@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "download_more_ram",
+  "version": "${version}",
+  "name": "download more ram",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "LGPL-3.0",
+  "icon": "assets/download_more_ram/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "dev.jab125.drm.client.DrmClient"
+    ],
+    "main": [
+      "dev.jab125.drm.Drm"
+    ]
+  },
+  "mixins": [
+    "download_more_ram.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+
+    "minecraft": ">=26.1-alpha.10"
+  }
+}

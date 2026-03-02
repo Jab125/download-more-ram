@@ -1,0 +1,28 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.jab125.drm.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "mixins": [
+    "GameRendererAccessor",
+    "LevelRendererAccessor",
+    "ListenerAndPacketMixin"
+  ],
+  "client": [
+    "ClientPacketListenerMixin",
+    "GlCommandEncoderMixin",
+    "KeyboardHandlerMixin",
+    "LevelLoadingScreenMixin",
+    "LivingEntityMixin",
+    "MinecraftMixin",
+    "MouseHandlerMixin",
+    "RemotePlayerMixin",
+    "WindowMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}
