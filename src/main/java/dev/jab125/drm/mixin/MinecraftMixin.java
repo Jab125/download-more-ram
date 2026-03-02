@@ -190,69 +190,6 @@ public abstract class MinecraftMixin implements MinecraftExtension {
 		}
 	}
 
-	//	public void doWorldLoad(
-	//		final LevelStorageSource.LevelStorageAccess levelSourceAccess,
-	//		final PackRepository packRepository,
-	//		final WorldStem worldStem,
-	//		final Optional<GameRules> gameRules,
-	//		final boolean newWorld
-	//	) {
-	//		this.disconnectWithProgressScreen();
-	//		Instant worldLoadStart = Instant.now();
-	//		LevelLoadTracker loadTracker = new LevelLoadTracker(newWorld ? 500L : 0L);
-	//		LevelLoadingScreen screen = new LevelLoadingScreen(loadTracker, LevelLoadingScreen.Reason.OTHER);
-	//		this.setScreen(screen);
-	//		int chunkStatusViewRadius = Math.max(5, 3) + ChunkLevel.RADIUS_AROUND_FULL_CHUNK + 1;
-	//
-	//		try {
-	//			levelSourceAccess.saveDataTag(worldStem.worldDataAndGenSettings().data());
-	//			LevelLoadListener loadListener = LevelLoadListener.compose(loadTracker, LoggingLevelLoadListener.forSingleplayer());
-	//			this.singleplayerServer = MinecraftServer.spin(
-	//				thread -> new IntegratedServer(thread, this, levelSourceAccess, packRepository, worldStem, gameRules, this.services, loadListener)
-	//			);
-	//			loadTracker.setServerChunkStatusView(this.singleplayerServer.createChunkLoadStatusView(chunkStatusViewRadius));
-	//			this.isLocalServer = true;
-	//			this.updateReportEnvironment(ReportEnvironment.local());
-	//			this.quickPlayLog
-	//				.setWorldData(
-	//					net.minecraft.client.quickplay.QuickPlayLog.Type.SINGLEPLAYER, levelSourceAccess.getLevelId(), worldStem.worldDataAndGenSettings().data().getLevelName()
-	//				);
-	//		} catch (Throwable var16) {
-	//			CrashReport report = CrashReport.forThrowable(var16, "Starting integrated server");
-	//			CrashReportCategory category = report.addCategory("Starting integrated server");
-	//			category.setDetail("Level ID", levelSourceAccess.getLevelId());
-	//			category.setDetail("Level Name", (CrashReportDetail<String>)(() -> worldStem.worldDataAndGenSettings().data().getLevelName()));
-	//			throw new ReportedException(report);
-	//		}
-	//
-	//		ProfilerFiller profiler = Profiler.get();
-	//		profiler.push("waitForServer");
-	//		long tickLengthNs = TimeUnit.SECONDS.toNanos(1L) / 60L;
-	//
-	//		while (!this.singleplayerServer.isReady() || this.overlay != null) {
-	//			long finishTime = Util.getNanos() + tickLengthNs;
-	//			screen.tick();
-	//			if (this.overlay != null) {
-	//				this.overlay.tick();
-	//			}
-	//
-	//			this.renderFrame(false);
-	//			this.runAllTasks();
-	//			this.managedBlock(() -> Util.getNanos() > finishTime);
-	//		}
-	//
-	//		profiler.pop();
-	//		Duration worldLoadDuration = Duration.between(worldLoadStart, Instant.now());
-	//		SocketAddress socketAddress = this.singleplayerServer.getConnection().startMemoryChannel();
-	//		Connection connection = Connection.connectToLocalServer(socketAddress);
-	//		connection.initiateServerboundPlayConnection(
-	//			socketAddress.toString(),
-	//			0,
-	//			new ClientHandshakePacketListenerImpl(connection, this, null, null, newWorld, worldLoadDuration, status -> {}, loadTracker, null)
-	//		);
-	//		connection.send(new ServerboundHelloPacket(this.getUser().getName(), this.getUser().getProfileId()));
-	//		this.pendingConnection = connection;
-	//	}
 	@Inject(method = "doWorldLoad", at = @At("RETURN"))
 	void doWorldLoad(LevelStorageSource.LevelStorageAccess levelSourceAccess, PackRepository packRepository, WorldStem worldStem, Optional<GameRules> gameRules, boolean newWorld, CallbackInfo ci) {
 
