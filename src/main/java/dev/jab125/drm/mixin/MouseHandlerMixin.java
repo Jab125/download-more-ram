@@ -31,4 +31,34 @@ public class MouseHandlerMixin {
 			}
 		}
 	}
+
+	@WrapMethod(method = "onMove")
+	void onMove(long handle, double xpos, double ypos, Operation<Void> original) {
+		if (minecraft.getConnection() == null) {
+			original.call(handle, xpos, ypos);
+			return;
+		}
+		try (var _ = new TemporarySwitcher()) {
+			for (int i = 0; i < ((MinecraftExtension) minecraft).getLocalPlayers().length; i++) {
+				if (((MinecraftExtension) minecraft).setLocalPlayerId(i)) {
+					original.call(handle, xpos, ypos);
+				}
+			}
+		}
+	}
+
+	@WrapMethod(method = "onScroll")
+	void onScroll(long handle, double xpos, double ypos, Operation<Void> original) {
+		if (minecraft.getConnection() == null) {
+			original.call(handle, xpos, ypos);
+			return;
+		}
+		try (var _ = new TemporarySwitcher()) {
+			for (int i = 0; i < ((MinecraftExtension) minecraft).getLocalPlayers().length; i++) {
+				if (((MinecraftExtension) minecraft).setLocalPlayerId(i)) {
+					original.call(handle, xpos, ypos);
+				}
+			}
+		}
+	}
 }
