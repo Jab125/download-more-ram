@@ -14,9 +14,11 @@
     "KeyboardHandlerMixin",
     "LevelLoadingScreenMixin",
     "LivingEntityMixin",
+    "LogoRendererMixin",
     "MinecraftMixin",
     "MouseHandlerMixin",
     "RemotePlayerMixin",
+    "SplashManagerMixin",
     "WindowMixin"
   ],
   "injectors": {
