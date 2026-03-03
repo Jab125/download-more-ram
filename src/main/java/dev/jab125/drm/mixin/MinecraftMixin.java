@@ -7,6 +7,7 @@ import com.mojang.blaze3d.TracyFrameCapture;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.FramerateLimitTracker;
 import com.mojang.blaze3d.platform.Window;
+import com.mojang.blaze3d.platform.WindowEventHandler;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.systems.TimerQuery;
 import dev.jab125.drm.DisplaySection;
@@ -15,11 +16,15 @@ import dev.jab125.drm.MinecraftExtension;
 import dev.jab125.drm.TemporarySwitcher;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.MouseHandler;
 import net.minecraft.client.User;
 import net.minecraft.client.gui.components.DebugScreenOverlay;
 import net.minecraft.client.gui.components.debug.DebugScreenEntries;
 import net.minecraft.client.gui.components.debug.DebugScreenEntryList;
+import net.minecraft.client.gui.components.toasts.ToastManager;
 import net.minecraft.client.gui.screens.LevelLoadingScreen;
+import net.minecraft.client.gui.screens.LoadingOverlay;
+import net.minecraft.client.gui.screens.Overlay;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientHandshakePacketListenerImpl;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -31,16 +36,23 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.ItemInHandRenderer;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.client.server.IntegratedServer;
+import net.minecraft.client.sounds.SoundManager;
+import net.minecraft.gizmos.Gizmos;
+import net.minecraft.gizmos.SimpleGizmoCollector;
 import net.minecraft.network.Connection;
+import net.minecraft.network.PacketProcessor;
 import net.minecraft.network.protocol.login.ServerboundHelloPacket;
 import net.minecraft.server.WorldStem;
 import net.minecraft.server.packs.repository.PackRepository;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
 import net.minecraft.util.Util;
 import net.minecraft.util.profiling.Profiler;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.util.profiling.metrics.profiling.MetricsRecorder;
+import net.minecraft.util.thread.ReentrantBlockableEventLoop;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.storage.LevelStorageSource;
@@ -56,11 +68,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.net.SocketAddress;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 @Mixin(Minecraft.class)
-public abstract class MinecraftMixin implements MinecraftExtension {
+public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnable> implements WindowEventHandler, MinecraftExtension {
 	@Shadow
 	@Nullable
 	public MultiPlayerGameMode gameMode;
@@ -76,6 +90,10 @@ public abstract class MinecraftMixin implements MinecraftExtension {
 	@Shadow
 	@Final
 	public ParticleEngine particleEngine;
+
+	public MinecraftMixin(String name, boolean propagatesCrashes) {
+		super(name, propagatesCrashes);
+	}
 
 	@Shadow
 	public abstract void setCameraEntity(@Nullable Entity cameraEntity);
@@ -143,6 +161,54 @@ public abstract class MinecraftMixin implements MinecraftExtension {
 	@Shadow
 	@Final
 	public LevelRenderer levelRenderer;
+
+	@Shadow
+	public abstract void stop();
+
+	@Shadow
+	private @Nullable CompletableFuture<Void> pendingReload;
+
+	@Shadow
+	public abstract CompletableFuture<Void> reloadResourcePacks();
+
+	@Shadow
+	private @Nullable Overlay overlay;
+
+	@Shadow
+	public abstract Gizmos.TemporaryCollection collectPerTickGizmos();
+
+	@Shadow
+	@Final
+	private PacketProcessor packetProcessor;
+
+	@Shadow
+	protected abstract boolean isLevelRunningNormally();
+
+	@Shadow
+	@Final
+	private TextureManager textureManager;
+	@Shadow
+	private List<SimpleGizmoCollector.GizmoInstance> drainedLatestTickGizmos;
+	@Shadow
+	@Final
+	private SimpleGizmoCollector perTickGizmos;
+	@Shadow
+	@Final
+	private SoundManager soundManager;
+	@Shadow
+	@Final
+	private ToastManager toastManager;
+	@Shadow
+	@Final
+	public MouseHandler mouseHandler;
+	@Shadow
+	private volatile boolean pause;
+
+	@Shadow
+	public abstract boolean hasSingleplayerServer();
+
+	@Shadow
+	private @Nullable IntegratedServer singleplayerServer;
 	private static final int MAX_COUNT = 4;
 	private int localPlayerId = 0;
 	private LocalPlayer[] localPlayers = new LocalPlayer[MAX_COUNT];
@@ -445,5 +511,110 @@ public abstract class MinecraftMixin implements MinecraftExtension {
 			System.out.println("WHAT?");
 		}
 		original.call(instance, getConnection() == null ? width : (int) (width * displaySections[localPlayerId].xW), getConnection() == null ? height : (int) (height * displaySections[localPlayerId].yW));
+	}
+
+	/**
+	 * @author
+	 * @reason
+	 */
+	@Overwrite
+	private void runTick(final boolean advanceGameTime) {
+		this.window.setErrorSection("Pre render");
+		if (this.window.shouldClose()) {
+			this.stop();
+		}
+
+		if (this.pendingReload != null && !(this.overlay instanceof LoadingOverlay)) {
+			CompletableFuture<Void> future = this.pendingReload;
+			this.pendingReload = null;
+			this.reloadResourcePacks().thenRun(() -> future.complete(null));
+		}
+
+		int ticksToDo = advanceGameTime ? this.deltaTracker.advanceGameTime(Util.getMillis()) : 0;
+		ProfilerFiller profiler = Profiler.get();
+		if (advanceGameTime) {
+			try (Gizmos.TemporaryCollection ignored = this.collectPerTickGizmos()) {
+				profiler.push("scheduledPacketProcessing");
+				this.packetProcessor.processQueuedPackets();
+				profiler.popPush("scheduledExecutables");
+				this.runAllTasks();
+				profiler.pop();
+			}
+
+			profiler.push("tick");
+			if (ticksToDo > 0 && this.isLevelRunningNormally()) {
+				profiler.push("textures");
+				this.textureManager.tick();
+				profiler.pop();
+			}
+
+			for (int i = 0; i < Math.min(10, ticksToDo); i++) {
+				profiler.incrementCounter("clientTick");
+
+				try (Gizmos.TemporaryCollection ignored = this.collectPerTickGizmos()) {
+
+					((Minecraft)(Object)this).tick();
+				}
+			}
+
+			if (ticksToDo > 0 && (this.level == null || this.level.tickRateManager().runsNormally())) {
+				this.drainedLatestTickGizmos = this.perTickGizmos.drainGizmos();
+			}
+
+			profiler.pop();
+		}
+
+		this.window.setErrorSection("Render");
+
+		if (getConnection() == null) {
+			try (Gizmos.TemporaryCollection ignored = this.levelRenderer.collectPerFrameGizmos()) {
+				profiler.push("sound");
+				this.soundManager.updateSource(this.gameRenderer.getMainCamera());
+				profiler.popPush("toasts");
+				this.toastManager.update();
+				profiler.popPush("mouse");
+				this.mouseHandler.handleAccumulatedMovement();
+				profiler.popPush("render");
+				this.renderFrame(advanceGameTime);
+				profiler.popPush("yield");
+				Thread.yield();
+				profiler.pop();
+			}
+		} else {
+			try (var _ = new TemporarySwitcher()) {
+				for (int j = 0; j < MAX_COUNT; j++) {
+					if (setLocalPlayerId(j)) {
+						try (Gizmos.TemporaryCollection ignored = this.levelRenderer.collectPerFrameGizmos()) {
+							profiler.push("sound");
+							this.soundManager.updateSource(this.gameRenderer.getMainCamera());
+							profiler.popPush("toasts");
+							this.toastManager.update();
+							profiler.popPush("mouse");
+							this.mouseHandler.handleAccumulatedMovement();
+							profiler.popPush("render");
+							this.renderFrame(advanceGameTime);
+							profiler.popPush("yield");
+							Thread.yield();
+							profiler.pop();
+						}
+					}
+				}
+
+			}
+		}
+
+
+
+		this.window.setErrorSection("Post render");
+		boolean previouslyPaused = this.pause;
+		this.pause = this.hasSingleplayerServer()
+					 && (this.screen != null && this.screen.isPauseScreen() || this.overlay != null && this.overlay.isPauseScreen())
+					 && !this.singleplayerServer.isPublished();
+		if (!previouslyPaused && this.pause) {
+			this.soundManager.pauseAllExcept(SoundSource.MUSIC, SoundSource.UI);
+		}
+
+		this.deltaTracker.updatePauseState(this.pause);
+		this.deltaTracker.updateFrozenState(!this.isLevelRunningNormally());
 	}
 }
