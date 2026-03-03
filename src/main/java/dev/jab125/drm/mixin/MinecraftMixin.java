@@ -15,6 +15,7 @@ import dev.jab125.drm.Drm;
 import dev.jab125.drm.MinecraftExtension;
 import dev.jab125.drm.TemporarySwitcher;
 import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.FramerateLimiter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.MouseHandler;
 import net.minecraft.client.User;
@@ -115,8 +116,6 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 	public abstract RenderTarget getMainRenderTarget();
 
 	@Shadow
-	public boolean noRender;
-	@Shadow
 	@Final
 	private Window window;
 	@Shadow
@@ -209,6 +208,19 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 
 	@Shadow
 	private @Nullable IntegratedServer singleplayerServer;
+	@Shadow
+	@Final
+	private RenderTarget mainRenderTarget;
+
+	@Shadow
+	protected abstract void pauseIfInactive();
+
+	@Shadow
+	public abstract boolean isGameLoadFinished();
+
+	@Shadow
+	protected abstract void pick(float partialTicks);
+
 	private static final int MAX_COUNT = 4;
 	private int localPlayerId = 0;
 	private LocalPlayer[] localPlayers = new LocalPlayer[MAX_COUNT];
@@ -386,7 +398,9 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 	 * @reason
 	 */
 	@Overwrite
-	private void renderFrame(final boolean renderLevel) {
+	private void renderFrame(final boolean advanceGameTime) {
+		ProfilerFiller profiler = Profiler.get();
+		profiler.push("update");
 		this.deltaTracker.advanceRealTime(Util.getMillis());
 		boolean recordGpuUtilization;
 		if (!this.debugEntries.isCurrentlyEnabled(DebugScreenEntries.GPU_UTILIZATION) && !this.metricsRecorder.isRecording()) {
@@ -398,87 +412,98 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 				TimerQuery.getInstance().beginProfile();
 			}
 		}
-
 		long renderStartTimer = Util.getNanos();
-		ProfilerFiller profiler = Profiler.get();
-		profiler.push("gpuAsync");
-		RenderSystem.executePendingTasks();
-		RenderTarget mainRenderTarget = this.getMainRenderTarget();
-		if (getConnection() == null) {
+		this.pauseIfInactive();
+		this.window.updateFullscreenIfChanged();
+
+		if (getConnection() == null || player == null) {
 			Drm.x = -1;
 			Drm.y = -1;
 			Drm.d = 1;
-			mainRenderTarget.resize(this.window.getWidth(), this.window.getHeight());
-			RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(mainRenderTarget.getColorTexture(), 0, mainRenderTarget.getDepthTexture(), 1.0);
-			profiler.popPush("gameRenderer");
-			if (!this.noRender) {
-
-				this.gameRenderer.render(this.deltaTracker, renderLevel);
+			if (this.isGameLoadFinished() && advanceGameTime && this.level != null) {
+				this.level.update();
 			}
 
-			profiler.popPush("blit");
-			if (!this.window.isMinimized()) {
-				mainRenderTarget.blitToScreen();
+			this.gameRenderer.update(this.deltaTracker, advanceGameTime);
+			float worldPartialTicks = this.deltaTracker.getGameTimeDeltaPartialTick(false);
+			this.pick(worldPartialTicks);
+			profiler.popPush("extract");
+			this.gameRenderer.getGameRenderState().framerateLimit = this.framerateLimitTracker.getFramerateLimit();
+			this.gameRenderer.extract(this.deltaTracker, advanceGameTime);
+			profiler.popPush("gpuAsync");
+			RenderSystem.executePendingTasks();
+			profiler.pop();
+			this.gameRenderer.render(this.deltaTracker, advanceGameTime);
+			profiler.push("present");
+			if (!this.gameRenderer.getGameRenderState().windowRenderState.isMinimized) {
+				this.mainRenderTarget.blitToScreen();
 			}
 		} else {
 			try (var _ = new TemporarySwitcher()) {
 				for (int i = 0; i < MAX_COUNT; i++) {
+					Drm.houston();
 					if (setLocalPlayerId(i)) {
+
 						DisplaySection displaySection = displaySections[i];
 						//	if (i == 1) continue;
 						Drm.x = (int) Mth.lerp(displaySection.xD, 0, window.getWidth());
 						Drm.y = (int) Mth.lerp(displaySection.yD, 0, window.getHeight());
 						mainRenderTarget.resize((int) (this.window.getWidth() * displaySection.xW), (int) (this.window.getHeight() * displaySection.yW));
-						RenderSystem.getDevice().createCommandEncoder().clearColorAndDepthTextures(mainRenderTarget.getColorTexture(), 0, mainRenderTarget.getDepthTexture(), 1.0);
-						profiler.popPush("gameRenderer");
-						if (!this.noRender) {
-							//	System.out.println(getCameraEntity());
-							if (screen != null) {
-								screen.width = (int) (window.getGuiScaledWidth() * displaySection.xW);
-								screen.height = (int) (window.getGuiScaledHeight() * displaySection.yW);
-							}
-							this.gameRenderer.resize((int) (this.window.getWidth() * displaySection.xW), (int) (this.window.getHeight() * displaySection.yW));
-							Drm.d = displaySection.xW;
-							Drm.d2 = displaySection.yW;
-							this.gameRenderer.getMainCamera().setEntity(player);
-							setLocalPlayerId(i);
-//						System.out.println(localPlayers[0].level() == localPlayers[1].level());
 
-							this.gameRenderer.setLevel((ClientLevel) player.level());
-							this.gameRenderer.render(this.deltaTracker, renderLevel);
-							Drm.d = 1;
-							Drm.d2 = 1;
+						if (screen != null) {
+							screen.width = (int) (window.getGuiScaledWidth() * displaySection.xW);
+							screen.height = (int) (window.getGuiScaledHeight() * displaySection.yW);
+						}
+						this.gameRenderer.resize((int) (this.window.getWidth() * displaySection.xW), (int) (this.window.getHeight() * displaySection.yW));
+
+
+						if (this.isGameLoadFinished() && advanceGameTime && this.level != null) {
+							this.level.update();
 						}
 
-						profiler.popPush("blit");
-						Drm.x = (int) Mth.lerp(displaySection.xD, 0, window.getWidth());
-						Drm.y = (int) Mth.lerp(displaySection.yD, 0, window.getHeight());
+						Drm.d = displaySection.xW;
+						Drm.d2 = displaySection.yW;
 
-						if (!this.window.isMinimized()) {
-							mainRenderTarget.blitToScreen();
+						this.gameRenderer.update(this.deltaTracker, advanceGameTime);
+						float worldPartialTicks = this.deltaTracker.getGameTimeDeltaPartialTick(false);
+						this.pick(worldPartialTicks);
+						profiler.popPush("extract");
+						this.gameRenderer.getGameRenderState().framerateLimit = this.framerateLimitTracker.getFramerateLimit();
+
+						this.gameRenderer.extract(this.deltaTracker, advanceGameTime);
+						profiler.popPush("gpuAsync");
+						RenderSystem.executePendingTasks();
+						profiler.pop();
+						this.gameRenderer.render(this.deltaTracker, advanceGameTime);
+						Drm.d = 1;
+						Drm.d2 = 1;
+						profiler.push("present");
+						if (!this.gameRenderer.getGameRenderState().windowRenderState.isMinimized) {
+							Drm.x = (int) Mth.lerp(displaySection.xD, 0, window.getWidth());
+							Drm.y = (int) Mth.lerp(displaySection.yD, 0, window.getHeight());
+							this.mainRenderTarget.blitToScreen();
 						}
 					}
 				}
 			}
 		}
 
-
-
 		this.frameTimeNs = Util.getNanos() - renderStartTimer;
 		if (recordGpuUtilization) {
 			this.currentFrameProfile = TimerQuery.getInstance().endProfile();
 		}
 
-		profiler.popPush("updateDisplay");
+		profiler.popPush("swapBuffers");
 		if (this.tracyFrameCapture != null) {
 			this.tracyFrameCapture.upload();
-			this.tracyFrameCapture.capture(mainRenderTarget);
+			this.tracyFrameCapture.capture(this.mainRenderTarget);
 		}
 
-		this.window.updateDisplay(this.tracyFrameCapture);
-		int framerateLimit = this.framerateLimitTracker.getFramerateLimit();
+		RenderSystem.flipFrame(this.tracyFrameCapture);
+		profiler.popPush("frameLimiter");
+		int framerateLimit = this.gameRenderer.getGameRenderState().framerateLimit;
 		if (framerateLimit < 260) {
-			RenderSystem.limitDisplayFPS(framerateLimit);
+			FramerateLimiter.limitDisplayFPS(framerateLimit);
 		}
 
 		profiler.popPush("fpsUpdate");
@@ -511,110 +536,5 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 			System.out.println("WHAT?");
 		}
 		original.call(instance, getConnection() == null ? width : (int) (width * displaySections[localPlayerId].xW), getConnection() == null ? height : (int) (height * displaySections[localPlayerId].yW));
-	}
-
-	/**
-	 * @author
-	 * @reason
-	 */
-	@Overwrite
-	private void runTick(final boolean advanceGameTime) {
-		this.window.setErrorSection("Pre render");
-		if (this.window.shouldClose()) {
-			this.stop();
-		}
-
-		if (this.pendingReload != null && !(this.overlay instanceof LoadingOverlay)) {
-			CompletableFuture<Void> future = this.pendingReload;
-			this.pendingReload = null;
-			this.reloadResourcePacks().thenRun(() -> future.complete(null));
-		}
-
-		int ticksToDo = advanceGameTime ? this.deltaTracker.advanceGameTime(Util.getMillis()) : 0;
-		ProfilerFiller profiler = Profiler.get();
-		if (advanceGameTime) {
-			try (Gizmos.TemporaryCollection ignored = this.collectPerTickGizmos()) {
-				profiler.push("scheduledPacketProcessing");
-				this.packetProcessor.processQueuedPackets();
-				profiler.popPush("scheduledExecutables");
-				this.runAllTasks();
-				profiler.pop();
-			}
-
-			profiler.push("tick");
-			if (ticksToDo > 0 && this.isLevelRunningNormally()) {
-				profiler.push("textures");
-				this.textureManager.tick();
-				profiler.pop();
-			}
-
-			for (int i = 0; i < Math.min(10, ticksToDo); i++) {
-				profiler.incrementCounter("clientTick");
-
-				try (Gizmos.TemporaryCollection ignored = this.collectPerTickGizmos()) {
-
-					((Minecraft)(Object)this).tick();
-				}
-			}
-
-			if (ticksToDo > 0 && (this.level == null || this.level.tickRateManager().runsNormally())) {
-				this.drainedLatestTickGizmos = this.perTickGizmos.drainGizmos();
-			}
-
-			profiler.pop();
-		}
-
-		this.window.setErrorSection("Render");
-
-		if (getConnection() == null) {
-			try (Gizmos.TemporaryCollection ignored = this.levelRenderer.collectPerFrameGizmos()) {
-				profiler.push("sound");
-				this.soundManager.updateSource(this.gameRenderer.getMainCamera());
-				profiler.popPush("toasts");
-				this.toastManager.update();
-				profiler.popPush("mouse");
-				this.mouseHandler.handleAccumulatedMovement();
-				profiler.popPush("render");
-				this.renderFrame(advanceGameTime);
-				profiler.popPush("yield");
-				Thread.yield();
-				profiler.pop();
-			}
-		} else {
-			try (var _ = new TemporarySwitcher()) {
-				for (int j = 0; j < MAX_COUNT; j++) {
-					if (setLocalPlayerId(j)) {
-						try (Gizmos.TemporaryCollection ignored = this.levelRenderer.collectPerFrameGizmos()) {
-							profiler.push("sound");
-							this.soundManager.updateSource(this.gameRenderer.getMainCamera());
-							profiler.popPush("toasts");
-							this.toastManager.update();
-							profiler.popPush("mouse");
-							this.mouseHandler.handleAccumulatedMovement();
-							profiler.popPush("render");
-							this.renderFrame(advanceGameTime);
-							profiler.popPush("yield");
-							Thread.yield();
-							profiler.pop();
-						}
-					}
-				}
-
-			}
-		}
-
-
-
-		this.window.setErrorSection("Post render");
-		boolean previouslyPaused = this.pause;
-		this.pause = this.hasSingleplayerServer()
-					 && (this.screen != null && this.screen.isPauseScreen() || this.overlay != null && this.overlay.isPauseScreen())
-					 && !this.singleplayerServer.isPublished();
-		if (!previouslyPaused && this.pause) {
-			this.soundManager.pauseAllExcept(SoundSource.MUSIC, SoundSource.UI);
-		}
-
-		this.deltaTracker.updatePauseState(this.pause);
-		this.deltaTracker.updateFrozenState(!this.isLevelRunningNormally());
 	}
 }

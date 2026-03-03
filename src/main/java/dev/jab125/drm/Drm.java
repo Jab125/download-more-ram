@@ -10,4 +10,7 @@ public class Drm implements ModInitializer {
 	@Override
 	public void onInitialize() {
 	}
+
+	public static void houston() {
+	}
 }
