@@ -48,7 +48,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
-@Mixin(ClientPacketListener.class)
+@Mixin(value = ClientPacketListener.class, priority = 100)
 public abstract class ClientPacketListenerMixin extends ClientCommonPacketListenerImpl implements ClientGamePacketListener, TickablePacketListener, Indexables {
 	@Shadow
 	private Set<ResourceKey<Level>> levels;
