@@ -33,7 +33,7 @@ dependencies {
 
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    implementation("com.terraformersmc:modmenu:${project.modmenu_version}")
+//    implementation("com.terraformersmc:modmenu:${project.modmenu_version}")
 }
 
 processResources {
