@@ -74,7 +74,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
-@Mixin(Minecraft.class)
+@Mixin(value = Minecraft.class, priority = 500)
 public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnable> implements WindowEventHandler, MinecraftExtension {
 	@Shadow
 	@Nullable
