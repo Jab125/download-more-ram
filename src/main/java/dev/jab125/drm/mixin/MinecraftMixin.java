@@ -10,6 +10,10 @@ import com.mojang.blaze3d.platform.Window;
 import com.mojang.blaze3d.platform.WindowEventHandler;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.systems.TimerQuery;
+import dev.isxander.controlify.Controlify;
+import dev.isxander.controlify.InputMode;
+import dev.isxander.controlify.controller.ControllerEntity;
+import dev.isxander.controlify.ingame.InGameInputHandler;
 import dev.jab125.drm.DisplaySection;
 import dev.jab125.drm.Drm;
 import dev.jab125.drm.MinecraftExtension;
@@ -18,6 +22,7 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.FramerateLimiter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.MouseHandler;
+import net.minecraft.client.Options;
 import net.minecraft.client.User;
 import net.minecraft.client.gui.components.DebugScreenOverlay;
 import net.minecraft.client.gui.components.debug.DebugScreenEntries;
@@ -33,6 +38,7 @@ import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.LevelLoadTracker;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.particle.ParticleEngine;
+import net.minecraft.client.player.KeyboardInput;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.ItemInHandRenderer;
@@ -221,6 +227,9 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 	@Shadow
 	protected abstract void pick(float partialTicks);
 
+	@Shadow
+	@Final
+	public Options options;
 	private static final int MAX_COUNT = 4;
 	private int localPlayerId = 0;
 	private LocalPlayer[] localPlayers = new LocalPlayer[MAX_COUNT];
@@ -228,6 +237,9 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 	private ItemInHandRenderer[] itemInHandRenderers = new ItemInHandRenderer[MAX_COUNT];
 	private Screen[] localScreens = new Screen[MAX_COUNT];
 	private DisplaySection[] displaySections = new DisplaySection[MAX_COUNT];
+	private Optional<ControllerEntity>[] controllers = new Optional[]{Optional.empty(),Optional.empty(),Optional.empty(),Optional.empty()};
+	private Optional<InGameInputHandler>[] inputHandlers = new Optional[]{Optional.empty(),Optional.empty(),Optional.empty(),Optional.empty()};
+	private InputMode[] currentInputMode = new InputMode[MAX_COUNT];
 
 	@Inject(method = "setScreen", at = @At("HEAD"))
 	void setScreen(Screen screen, CallbackInfo ci) {
@@ -368,6 +380,15 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 		particleEngine.setLevel(level);
 		screen = localScreens[id];
 
+		((ControlifyAccessor) Controlify.instance()).setCurrentController(controllers[id].orElse(null));
+		((ControlifyAccessor) Controlify.instance()).setCurrentInputMode(currentInputMode[id]);
+		((ControlifyAccessor) Controlify.instance()).setConsecutiveInputSwitches(-214743838);
+		if (id == 1 && player != null) {
+			player.input = new KeyboardInput(options);
+		}
+		if (id == 0 && localPlayers[1] != null) {
+			Drm.houston();
+		}
 		return true;
 	}
 
@@ -377,6 +398,11 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 		localGameModes[0] = gameMode;
 		itemInHandRenderers[0] = gameRenderer.itemInHandRenderer;
 		displaySections[0] = new DisplaySection(0, 0, 1, 1);
+		controllers[0] = Controlify.instance().getCurrentController();
+		inputHandlers[0] = Controlify.instance().inGameInputHandler();
+		currentInputMode[0] = InputMode.MIXED;
+		currentInputMode[1] = InputMode.KEYBOARD_MOUSE;
+
 
 //		localPlayers[1] = localPlayers[1] != null ? localPlayers[1] : player;
 //		localGameModes[1] = localGameModes[1] != null ? localGameModes[1] : gameMode;
@@ -441,7 +467,7 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 		} else {
 			try (var _ = new TemporarySwitcher()) {
 				for (int i = 0; i < MAX_COUNT; i++) {
-					Drm.houston();
+//					Drm.houston();
 					if (setLocalPlayerId(i)) {
 
 						DisplaySection displaySection = displaySections[i];

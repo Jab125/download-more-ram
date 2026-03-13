@@ -12,6 +12,13 @@ base {
 
 
 repositories {
+    mavenCentral()
+    maven {
+        url = "https://maven.isxander.dev/releases/"
+    }
+    maven {
+        url = "https://maven.quiltmc.org/repository/release/"
+    }
     // Add repositories to retrieve artifacts from in here.
     // You should only use this when depending on other mods because
     // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
@@ -23,6 +30,8 @@ repositories {
             url = "https://maven.terraformersmc.com/"
         }
     }
+
+    mavenLocal()
 }
 
 dependencies {
@@ -33,6 +42,7 @@ dependencies {
 
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
+    implementation "dev.isxander:controlify:3.0.0-beta.9999+26.1-fabric"
 //    implementation("com.terraformersmc:modmenu:${project.modmenu_version}")
 }
 

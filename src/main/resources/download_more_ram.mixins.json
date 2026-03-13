@@ -4,7 +4,10 @@
   "package": "dev.jab125.drm.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
+    "ControlifyAccessor",
+    "ControlifyMixin",
     "GameRendererAccessor",
+    "InGameInputHandlerMixin",
     "LevelRendererAccessor",
     "ListenerAndPacketMixin"
   ],

@@ -17,19 +17,19 @@ public class KeyboardHandlerMixin {
 	@Shadow
 	@Final
 	private Minecraft minecraft;
-
-	@WrapMethod(method = "keyPress")
-	void k(long handle, int action, KeyEvent event, Operation<Void> original) {
-		if (minecraft.getConnection() == null) {
-			original.call(handle, action, event);
-			return;
-		}
-		try (var _ = new TemporarySwitcher()) {
-			for (int i = 0; i < ((MinecraftExtension) minecraft).getLocalPlayers().length; i++) {
-				if (((MinecraftExtension) minecraft).setLocalPlayerId(i)) {
-					original.call(handle, action, event);
-				}
-			}
-		}
-	}
+//
+//	@WrapMethod(method = "keyPress")
+//	void k(long handle, int action, KeyEvent event, Operation<Void> original) {
+//		if (minecraft.getConnection() == null) {
+//			original.call(handle, action, event);
+//			return;
+//		}
+//		try (var _ = new TemporarySwitcher()) {
+//			for (int i = 0; i < ((MinecraftExtension) minecraft).getLocalPlayers().length; i++) {
+//				if (((MinecraftExtension) minecraft).setLocalPlayerId(i)) {
+//					original.call(handle, action, event);
+//				}
+//			}
+//		}
+//	}
 }
