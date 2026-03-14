@@ -70,12 +70,15 @@ import net.minecraft.world.level.storage.LevelStorageSource;
 import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Mutable;
 import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import java.io.File;
 import java.net.SocketAddress;
 import java.time.Duration;
 import java.time.Instant;
@@ -232,7 +235,7 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 	protected abstract void pick(float partialTicks);
 
 	@Shadow
-	@Final
+	@Final @Mutable
 	public Options options;
 	@Shadow
 	@Final
@@ -243,6 +246,9 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 	@Shadow
 	@Final
 	public Gui gui;
+	@Shadow
+	@Final
+	public File gameDirectory;
 	private static final int MAX_COUNT = 4;
 	private int localPlayerId = 0;
 	private LocalPlayer[] localPlayers = new LocalPlayer[MAX_COUNT];
@@ -254,6 +260,7 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 	private Optional<InGameInputHandler>[] inputHandlers = new Optional[]{Optional.empty(),Optional.empty(),Optional.empty(),Optional.empty()};
 	private InputMode[] currentInputMode = new InputMode[MAX_COUNT];
 	private ChatComponent[] chatComponents = new ChatComponent[MAX_COUNT];
+	private Options[] optionses = new Options[MAX_COUNT];
 
 	@Inject(method = "setScreen", at = @At("HEAD"))
 	void setScreen(Screen screen, CallbackInfo ci) {
@@ -324,12 +331,22 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 
 //	@WrapMethod(method = "handleKeybinds")
 //	void ftick (Operation<Void> original) {
-//		for (int i = 0; i < MAX_COUNT; i++) {
-//			if (setLocalPlayerId(i)) {
-//				original.call();
+//		try (var _ = new TemporarySwitcher()) {
+//			for (int i = 0; i < MAX_COUNT; i++) {
+//				if (setLocalPlayerId(i)) {
+//					original.call();
+//				}
 //			}
 //		}
 //	}
+
+	@Inject(method = "startAttack", at = @At("HEAD"))
+	void start(CallbackInfoReturnable<Boolean> cir) {
+		if ((Object) this instanceof MinecraftExtension extension && extension.getLocalPlayerId() == 1) {
+			Drm.houston2();
+		}
+
+	}
 
 	@WrapMethod(method = "tick")
 	void tick(Operation<Void> original) {
@@ -404,6 +421,7 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 		if (id == 0 && localPlayers[1] != null) {
 			Drm.houston();
 		}
+		options = optionses[id];
 		return true;
 	}
 
@@ -419,6 +437,8 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 		currentInputMode[1] = InputMode.KEYBOARD_MOUSE;
 		chatComponents[0] = new ChatComponent((Minecraft) (Object) this);
 		chatComponents[1] = new ChatComponent((Minecraft) (Object) this);
+		optionses[0] = options;
+		optionses[1] = new Options(Minecraft.class.cast(this), gameDirectory);
 
 
 //		localPlayers[1] = localPlayers[1] != null ? localPlayers[1] : player;

@@ -21,6 +21,7 @@
     "LogoRendererMixin",
     "MinecraftMixin",
     "MouseHandlerMixin",
+    "MultiplayerGameModeMixin",
     "RemotePlayerMixin",
     "SplashManagerMixin",
     "WindowMixin"

@@ -13,4 +13,6 @@ public class Drm implements ModInitializer {
 
 	public static void houston() {
 	}
+	public static void houston2() {
+	}
 }
