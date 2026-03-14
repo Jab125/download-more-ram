@@ -7,6 +7,7 @@
     "ControlifyAccessor",
     "ControlifyMixin",
     "GameRendererAccessor",
+    "GuiAccessor",
     "InGameInputHandlerMixin",
     "LevelRendererAccessor",
     "ListenerAndPacketMixin"

@@ -24,6 +24,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.MouseHandler;
 import net.minecraft.client.Options;
 import net.minecraft.client.User;
+import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.components.ChatComponent;
 import net.minecraft.client.gui.components.DebugScreenOverlay;
 import net.minecraft.client.gui.components.debug.DebugScreenEntries;
 import net.minecraft.client.gui.components.debug.DebugScreenEntryList;
@@ -43,6 +45,8 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.ItemInHandRenderer;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.renderer.item.ItemModelResolver;
 import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.client.sounds.SoundManager;
@@ -230,6 +234,15 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 	@Shadow
 	@Final
 	public Options options;
+	@Shadow
+	@Final
+	private EntityRenderDispatcher entityRenderDispatcher;
+	@Shadow
+	@Final
+	private ItemModelResolver itemModelResolver;
+	@Shadow
+	@Final
+	public Gui gui;
 	private static final int MAX_COUNT = 4;
 	private int localPlayerId = 0;
 	private LocalPlayer[] localPlayers = new LocalPlayer[MAX_COUNT];
@@ -240,6 +253,7 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 	private Optional<ControllerEntity>[] controllers = new Optional[]{Optional.empty(),Optional.empty(),Optional.empty(),Optional.empty()};
 	private Optional<InGameInputHandler>[] inputHandlers = new Optional[]{Optional.empty(),Optional.empty(),Optional.empty(),Optional.empty()};
 	private InputMode[] currentInputMode = new InputMode[MAX_COUNT];
+	private ChatComponent[] chatComponents = new ChatComponent[MAX_COUNT];
 
 	@Inject(method = "setScreen", at = @At("HEAD"))
 	void setScreen(Screen screen, CallbackInfo ci) {
@@ -379,10 +393,11 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 		//this.gameRenderer.le.setLevel(level);
 		particleEngine.setLevel(level);
 		screen = localScreens[id];
+		((GuiAccessor)gui).setChat(chatComponents[id]);
 
 		((ControlifyAccessor) Controlify.instance()).setCurrentController(controllers[id].orElse(null));
 		((ControlifyAccessor) Controlify.instance()).setCurrentInputMode(currentInputMode[id]);
-		((ControlifyAccessor) Controlify.instance()).setConsecutiveInputSwitches(-214743838);
+		((ControlifyAccessor) Controlify.instance()).setConsecutiveInputSwitches(-2147438381);
 		if (id == 1 && player != null) {
 			player.input = new KeyboardInput(options);
 		}
@@ -402,11 +417,13 @@ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnabl
 		inputHandlers[0] = Controlify.instance().inGameInputHandler();
 		currentInputMode[0] = InputMode.MIXED;
 		currentInputMode[1] = InputMode.KEYBOARD_MOUSE;
+		chatComponents[0] = new ChatComponent((Minecraft) (Object) this);
+		chatComponents[1] = new ChatComponent((Minecraft) (Object) this);
 
 
 //		localPlayers[1] = localPlayers[1] != null ? localPlayers[1] : player;
 //		localGameModes[1] = localGameModes[1] != null ? localGameModes[1] : gameMode;
-		itemInHandRenderers[1] = gameRenderer.itemInHandRenderer;
+		itemInHandRenderers[1] = new ItemInHandRenderer((Minecraft) (Object) this, entityRenderDispatcher, itemModelResolver);
 	}
 
 //	@WrapOperation(method = "renderFrame", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/GameRenderer;render(Lnet/minecraft/client/DeltaTracker;Z)V"))

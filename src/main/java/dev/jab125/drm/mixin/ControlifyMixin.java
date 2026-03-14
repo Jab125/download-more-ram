@@ -6,23 +6,27 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.llamalad7.mixinextras.sugar.Local;
 import dev.isxander.controlify.Controlify;
 import dev.isxander.controlify.controller.ControllerEntity;
+import dev.isxander.controlify.controller.input.ControllerStateView;
+import dev.isxander.controlify.controller.input.InputComponent;
 import dev.isxander.controlify.gui.guide.InGameButtonGuide;
 import dev.isxander.controlify.ingame.ControllerPlayerMovement;
 import dev.isxander.controlify.ingame.InGameInputHandler;
 import dev.jab125.drm.MinecraftExtension;
 import dev.jab125.drm.TemporarySwitcher;
 import net.minecraft.client.Minecraft;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 
 import java.util.Optional;
 import java.util.function.Consumer;
 
 @Mixin(Controlify.class)
-public class ControlifyMixin {
+public abstract class ControlifyMixin {
 	@Shadow
 	private Minecraft minecraft;
 
@@ -32,6 +36,12 @@ public class ControlifyMixin {
 	@Shadow
 	@Nullable
 	public InGameButtonGuide inGameButtonGuide;
+
+	@Shadow
+	public abstract @NotNull Optional<ControllerEntity> getCurrentController();
+
+	@Shadow
+	public abstract void setCurrentController(@Nullable ControllerEntity controller, boolean changeInputMode);
 
 	@WrapOperation(method = "tick", at = @At(value = "INVOKE", target = "Ljava/util/Optional;ifPresent(Ljava/util/function/Consumer;)V"))
 	<T> void tick(Optional instance, Consumer<? super T> action, Operation<Void> original, @Local(argsOnly = true) Minecraft client) {
@@ -66,5 +76,22 @@ public class ControlifyMixin {
 			input.rawStateNow().clearState();
 			input.rawStateThen().clearState();
 		});
+	}
+
+	/**
+	 * @author
+	 * @reason
+	 */
+	@Overwrite
+	private void tickInactiveController(ControllerEntity controller) {
+		InputComponent input = controller.input().orElseThrow();
+		ControllerStateView state = input.stateNow();
+
+		boolean thisControllerGivingInput = state.isGivingInput();
+		boolean activeControllerGivingInput = getCurrentController().map(c -> c.input().orElseThrow().stateNow().isGivingInput()).orElse(false);
+
+		if (thisControllerGivingInput && !activeControllerGivingInput) {
+			if (((MinecraftExtension) minecraft).getLocalPlayerId() == 0) this.setCurrentController(controller, true);
+		}
 	}
 }
